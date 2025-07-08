@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pydantic
+mflux
+pillow
+requests
+click>=8.0.0

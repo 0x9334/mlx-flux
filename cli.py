@@ -26,7 +26,7 @@ def cli():
 @click.option('--host', default='0.0.0.0', help='Host to bind to')
 @click.option('--port', default=8000, type=int, help='Port to bind to')
 @click.option('--model-path', default='flux-dev', help='Path to the model')
-@click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux_schnell', 'flux-kotext']), help='Model configuration')
+@click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux-schnell', 'flux-kotext']), help='Model configuration')
 @click.option('--quantize', default=8, type=click.Choice([4, 8, 16]), help='Quantization level')
 @click.option('--reload', is_flag=True, help='Auto-reload on code changes (development)')
 def serve(host: str, port: int, model_path: str, config_name: str, quantize: int, reload: bool):

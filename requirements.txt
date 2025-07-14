@@ -1,7 +1,8 @@
-fastapi
-uvicorn[standard]
-pydantic
-mflux
-pillow
-requests
-click>=8.0.0
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pydantic==2.11.7
+mflux==0.9.3
+pillow==11.3.0
+requests==2.32.4
+click==8.2.1
+python-multipart==0.0.20

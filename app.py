@@ -18,7 +18,10 @@ from schema import (
     ImageGenerationResponse, 
     ImageGenerationError, 
     ImageGenerationErrorResponse,
-    ImageData
+    ImageData,
+    ImageSize,
+    ErrorCode,
+    ResponseFormat
 )
 
 # Configure logging
@@ -31,14 +34,15 @@ flux_model: Optional[FluxModel] = None
 # Semaphore to limit concurrent image generation requests
 image_generation_semaphore: Optional[asyncio.Semaphore] = None
 
-def parse_image_size(size_str: str) -> tuple[int, int]:
-    """Parse image size string to width, height tuple"""
+def parse_image_size(size: ImageSize) -> tuple[int, int]:
+    """Parse ImageSize enum to width, height tuple"""
     size_mapping = {
-        "256x256": (256, 256),
-        "512x512": (512, 512),
-        "1024x1024": (1024, 1024),
+        ImageSize.SMALL: (256, 256),
+        ImageSize.MEDIUM: (512, 512),
+        ImageSize.LARGE: (1024, 1024),
+        ImageSize.COSMOS_SIZE: (1024, 1024),
     }
-    return size_mapping.get(size_str, (1024, 1024))
+    return size_mapping.get(size, (1024, 1024))
 
 def image_to_base64(image) -> str:
     """Convert PIL Image to base64 string"""
@@ -46,6 +50,17 @@ def image_to_base64(image) -> str:
     image.save(buffer, format="PNG")
     img_bytes = buffer.getvalue()
     return base64.b64encode(img_bytes).decode()
+
+def create_error_response(error_code: ErrorCode, message: str, error_type: str = "server_error") -> ImageGenerationErrorResponse:
+    """Create a standardized error response"""
+    return ImageGenerationErrorResponse(
+        created=int(time.time()),
+        error=ImageGenerationError(
+            code=error_code,
+            message=message,
+            type=error_type
+        )
+    )
 
 def initialize_flux_model(model_path: str = "flux-dev", config_name: str = "dev", quantize: int = 8) -> FluxModel:
     """Initialize the Flux model"""
@@ -115,13 +130,14 @@ async def root():
         "docs_url": "/docs",
         "health_url": "/health",
         "available_configs": FluxModel.get_available_configs(),
-        "model_loaded": flux_model is not None
+        "model_loaded": flux_model is not None,
+        "supported_sizes": [size.value for size in ImageSize],
+        "response_formats": [format.value for format in ResponseFormat]
     }
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    
     return {
         "status": "ok"
     }
@@ -133,13 +149,9 @@ async def generate_image(request: ImageGenerationRequest):
     
     if flux_model is None:
         logger.error("Flux model is not loaded")
-        error_response = ImageGenerationErrorResponse(
-            created=int(time.time()),
-            error=ImageGenerationError(
-                code="model_not_loaded",
-                message="Flux model is not loaded. Please check server logs and try again.",
-                type="server_error"
-            )
+        error_response = create_error_response(
+            ErrorCode.INTERNAL_ERROR,
+            "Flux model is not loaded. Please check server logs and try again."
         )
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -149,13 +161,9 @@ async def generate_image(request: ImageGenerationRequest):
     # Check if semaphore is initialized
     if image_generation_semaphore is None:
         logger.error("Image generation semaphore is not initialized")
-        error_response = ImageGenerationErrorResponse(
-            created=int(time.time()),
-            error=ImageGenerationError(
-                code="server_not_ready",
-                message="Server is not properly initialized. Please try again.",
-                type="server_error"
-            )
+        error_response = create_error_response(
+            ErrorCode.INTERNAL_ERROR,
+            "Server is not properly initialized. Please try again."
         )
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -167,8 +175,8 @@ async def generate_image(request: ImageGenerationRequest):
         logger.info("Acquired semaphore for image generation")
         
         try:
-            # Parse image size
-            width, height = parse_image_size(request.size.value)
+            # Parse image size using the enum
+            width, height = parse_image_size(request.size)
             
             # Generate seed if not provided
             seed = request.seed if request.seed is not None else random.randint(0, 2**32 - 1)
@@ -194,32 +202,41 @@ async def generate_image(request: ImageGenerationRequest):
             generation_time = time.time() - start_time
             logger.info(f"Image generated successfully in {generation_time:.2f} seconds")
             
-            # Convert to base64
-            b64_image = image_to_base64(image)
+            # Create response data based on response format
+            if request.response_format == ResponseFormat.B64_JSON:
+                b64_image = image_to_base64(image)
+                image_data = ImageData(b64_json=b64_image, url=None)
+            else:  # URL format - for future implementation
+                # For now, we only support base64
+                b64_image = image_to_base64(image)
+                image_data = ImageData(b64_json=b64_image, url=None)
             
             # Create response
             response = ImageGenerationResponse(
                 created=int(time.time()),
-                data=[
-                    ImageData(
-                        b64_json=b64_image,
-                        url=None  # We're returning base64, not URL
-                    )
-                ]
+                data=[image_data]
             )
             
             logger.info("Image generation completed successfully, releasing semaphore")
             return response
             
+        except ValueError as e:
+            logger.error(f"Validation error: {e}")
+            error_response = create_error_response(
+                ErrorCode.VALIDATION_ERROR,
+                str(e),
+                "validation_error"
+            )
+            logger.info("Image generation failed due to validation error, releasing semaphore")
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=error_response.dict()
+            )
         except Exception as e:
             logger.error(f"Error generating image: {e}")
-            error_response = ImageGenerationErrorResponse(
-                created=int(time.time()),
-                error=ImageGenerationError(
-                    code="generation_error",
-                    message=f"Failed to generate image: {str(e)}",
-                    type="server_error"
-                )
+            error_response = create_error_response(
+                ErrorCode.GENERATION_ERROR,
+                f"Failed to generate image: {str(e)}"
             )
             logger.info("Image generation failed, releasing semaphore")
             return JSONResponse(

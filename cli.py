@@ -26,7 +26,7 @@ def cli():
 @click.option('--host', default='0.0.0.0', help='Host to bind to')
 @click.option('--port', default=8000, type=int, help='Port to bind to')
 @click.option('--model-path', default='flux-dev', help='Path to the model')
-@click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux-schnell', 'flux-kotext']), help='Model configuration')
+@click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux-schnell', 'flux-kontext']), help='Model configuration')
 @click.option('--quantize', default=8, type=click.Choice([4, 8, 16]), help='Quantization level')
 @click.option('--reload', is_flag=True, help='Auto-reload on code changes (development)')
 def serve(host: str, port: int, model_path: str, config_name: str, quantize: int, reload: bool):
@@ -59,7 +59,7 @@ def serve(host: str, port: int, model_path: str, config_name: str, quantize: int
 @cli.command()
 @click.option('--prompt', required=True, help='Text prompt for image generation')
 @click.option('--model-path', default='flux-dev', help='Path to the model')
-@click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux_schnell', 'flux-kotext']), help='Model configuration')
+@click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux-schnell', 'flux-kontext']), help='Model configuration')
 @click.option('--steps', default=20, type=int, help='Number of inference steps')
 @click.option('--width', default=1024, type=int, help='Image width')
 @click.option('--height', default=1024, type=int, help='Image height')
@@ -112,7 +112,7 @@ def generate(prompt: str, model_path: str, config_name: str, steps: int, width: 
 
 @cli.command()
 @click.option('--model-path', default='flux-dev', help='Path to the model')
-@click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux_schnell', 'flux-kotext']), help='Model configuration to test')
+@click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux-schnell', 'flux-kontext']), help='Model configuration to test')
 @click.option('--quantize', default=8, type=click.Choice([4, 8, 16]), help='Quantization level')
 def test_model(model_path: str, config_name: str, quantize: int):
     """Test model loading and basic functionality"""
@@ -177,8 +177,8 @@ def info():
     # Configuration details
     click.echo("\nConfiguration Details:")
     click.echo("  flux-dev: High-quality image generation (slower, better quality)")
-    click.echo("  flux_schnell: Fast image generation (faster, good quality)")
-    click.echo("  flux-kotext: Specialized configuration for Korean text")
+    click.echo("  flux-schnell: Fast image generation (faster, good quality)")
+    click.echo("  flux-kontext: Specialized configuration for high-quality generation")
     
     # Quantization levels
     click.echo("\nQuantization Levels:")

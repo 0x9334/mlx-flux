@@ -244,11 +244,12 @@ class FluxKontextModel(BaseFluxModel):
     def _generate_image(self, prompt: str, seed: int, config: Config) -> Image.Image:
         """Generate image using Flux Kontext model."""
         try:
-            return self._model.generate_image(
-                seed=seed,
+            result = self._model.generate_image(
+                config=config,
                 prompt=prompt,
-                config=config
+                seed=seed,
             )
+            return result.image
         except Exception as e:
             raise ModelGenerationError(f"Kontext model generation failed: {e}") from e
 

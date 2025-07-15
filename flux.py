@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Type, Any, Optional, Union
+from typing import Dict, Type, Any, Optional, Union, List
 from PIL import Image
 from mflux import Flux1, Config
 from mflux.config.model_config import ModelConfig
@@ -36,17 +36,28 @@ class ModelConfiguration:
                  model_config: Optional[ModelConfig] = None,
                  quantize: int = 8,
                  default_steps: int = 20,
-                 default_guidance: float = 2.5):
+                 default_guidance: float = 2.5,
+                 lora_paths: Optional[List[str]] = None,
+                 lora_scales: Optional[List[float]] = None):
         
         # Validate quantization level
         if quantize not in [4, 8, 16]:
             raise InvalidConfigurationError(f"Invalid quantization level: {quantize}. Must be 4, 8, or 16.")
-            
+        
+        # Validate lora parameters
+        if lora_paths is not None and lora_scales is not None:
+            if len(lora_paths) != len(lora_scales):
+                raise InvalidConfigurationError(
+                    f"Number of lora_paths ({len(lora_paths)}) must match number of lora_scales ({len(lora_scales)})"
+                )
+        
         self.model_type = model_type
         self.model_config = model_config
         self.quantize = quantize
         self.default_steps = default_steps
         self.default_guidance = default_guidance
+        self.lora_paths = lora_paths
+        self.lora_scales = lora_scales
     
     @classmethod
     def schnell(cls, quantize: int = 8, lora_paths: Optional[List[str]] = None, lora_scales: Optional[List[float]] = None) -> 'ModelConfiguration':
@@ -82,7 +93,9 @@ class ModelConfiguration:
             model_config=None,  # Kontext doesn't use ModelConfig
             quantize=quantize,
             default_steps=28,
-            default_guidance=2.5
+            default_guidance=2.5,
+            lora_paths=None,  # Kontext doesn't support LoRA
+            lora_scales=None
         )
 
 
@@ -200,12 +213,23 @@ class FluxStandardModel(BaseFluxModel):
         """Load the standard Flux model."""
         try:
             self.logger.info(f"Loading {self.config.model_type} model from {self.model_path}")
+            
+            # Prepare lora parameters
+            lora_paths = self.config.lora_paths
+            lora_scales = self.config.lora_scales
+            
+            # Log LoRA information if provided
+            if lora_paths:
+                self.logger.info(f"Using LoRA adapters: {lora_paths}")
+                if lora_scales:
+                    self.logger.info(f"LoRA scales: {lora_scales}")
+            
             self._model = Flux1(
                 model_config=self.config.model_config,
                 local_path=self.model_path,
                 quantize=self.config.quantize,
-                lora_path=self.config.lora_path,
-                lora_scales=self.config.lora_scales,
+                lora_paths=lora_paths,
+                lora_scales=lora_scales,
             )
             self._is_loaded = True
             self.logger.info(f"{self.config.model_type} model loaded successfully")
@@ -273,10 +297,13 @@ class FluxModel:
         "flux-kontext": FluxKontextModel,
     }
     
-    def __init__(self, model_path: str, config_name: str, quantize: int = 8):
+    def __init__(self, model_path: str, config_name: str, quantize: int = 8, 
+                 lora_paths: Optional[List[str]] = None, lora_scales: Optional[List[float]] = None):
         self.config_name = config_name
         self.model_path = model_path
         self.quantize = quantize
+        self.lora_paths = lora_paths
+        self.lora_scales = lora_scales
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Validate configuration
@@ -284,16 +311,25 @@ class FluxModel:
             available_configs = ", ".join(self._MODEL_CONFIGS.keys())
             raise InvalidConfigurationError(f"Invalid config name: {config_name}. Available options: {available_configs}")
         
+        # Validate LoRA parameters for kontext model
+        if config_name == "flux-kontext" and (lora_paths is not None or lora_scales is not None):
+            raise InvalidConfigurationError("Flux Kontext model does not support LoRA adapters")
+        
         try:
             # Create model configuration
             config_factory = self._MODEL_CONFIGS[config_name]
-            self.config = config_factory(quantize=quantize)
+            if config_name == "flux-kontext":
+                self.config = config_factory(quantize=quantize)
+            else:
+                self.config = config_factory(quantize=quantize, lora_paths=lora_paths, lora_scales=lora_scales)
             
             # Create model instance
             model_class = self._MODEL_CLASSES[config_name]
             self.flux = model_class(model_path, self.config)
             
             self.logger.info(f"FluxModel initialized successfully with config: {config_name}")
+            if lora_paths:
+                self.logger.info(f"LoRA adapters: {lora_paths}")
             
         except Exception as e:
             error_msg = f"Failed to initialize FluxModel: {e}"
@@ -334,6 +370,8 @@ class FluxModel:
             "default_steps": self.config.default_steps,
             "default_guidance": self.config.default_guidance,
             "is_loaded": self.flux._is_loaded if hasattr(self.flux, '_is_loaded') else False,
+            "lora_paths": self.config.lora_paths,
+            "lora_scales": self.config.lora_scales,
         }
     
     def is_loaded(self) -> bool:

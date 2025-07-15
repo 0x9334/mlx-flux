@@ -6,8 +6,6 @@ from mflux.config.model_config import ModelConfig
 from mflux.kontext.flux_kontext import Flux1Kontext
 import logging
 import os
-from pathlib import Path
-
 
 # Custom Exceptions
 class FluxModelError(Exception):
@@ -51,25 +49,29 @@ class ModelConfiguration:
         self.default_guidance = default_guidance
     
     @classmethod
-    def schnell(cls, quantize: int = 8) -> 'ModelConfiguration':
+    def schnell(cls, quantize: int = 8, lora_paths: Optional[List[str]] = None, lora_scales: Optional[List[float]] = None) -> 'ModelConfiguration':
         """Create configuration for Flux Schnell model."""
         return cls(
             model_type="schnell",
             model_config=ModelConfig.schnell(),
             quantize=quantize,
             default_steps=4,
-            default_guidance=1.0
+            default_guidance=0.0,
+            lora_paths=lora_paths,
+            lora_scales=lora_scales
         )
     
     @classmethod
-    def dev(cls, quantize: int = 8) -> 'ModelConfiguration':
+    def dev(cls, quantize: int = 8, lora_paths: Optional[List[str]] = None, lora_scales: Optional[List[float]] = None) -> 'ModelConfiguration':
         """Create configuration for Flux Dev model."""
         return cls(
             model_type="dev",
             model_config=ModelConfig.dev(),
             quantize=quantize,
-            default_steps=20,
-            default_guidance=2.5
+            default_steps=25,
+            default_guidance=3.5,
+            lora_paths=lora_paths,
+            lora_scales=lora_scales
         )
     
     @classmethod
@@ -201,7 +203,9 @@ class FluxStandardModel(BaseFluxModel):
             self._model = Flux1(
                 model_config=self.config.model_config,
                 local_path=self.model_path,
-                quantize=self.config.quantize
+                quantize=self.config.quantize,
+                lora_path=self.config.lora_path,
+                lora_scales=self.config.lora_scales,
             )
             self._is_loaded = True
             self.logger.info(f"{self.config.model_type} model loaded successfully")

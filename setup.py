@@ -36,7 +36,10 @@ setup(
         "app",
         "flux", 
         "schema",
-        "cli"
+        "cli",
+        "version",
+        "lora",
+        "inference"
     ],
     classifiers=[
         "Development Status :: 4 - Beta",

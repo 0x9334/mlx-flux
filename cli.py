@@ -11,11 +11,6 @@ import uvicorn
 import time
 import random
 
-# Add the package directory to Python path
-package_dir = os.path.dirname(os.path.abspath(__file__))
-if package_dir not in sys.path:
-    sys.path.insert(0, package_dir)
-
 from flux import FluxModel
 from app import run_server
 

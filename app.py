@@ -10,9 +10,10 @@ import random
 import os
 import logging
 import asyncio
-from typing import Optional
+from typing import Optional, List
 from PIL import Image
 import tempfile
+from version import __version__
 
 from flux import FluxModel
 from schema import (
@@ -67,14 +68,22 @@ def create_error_response(error_code: ErrorCode, message: str, error_type: str =
         )
     )
 
-def initialize_flux_model(model_path: str = "flux-dev", config_name: str = "dev", quantize: int = 8) -> FluxModel:
+def initialize_flux_model(model_path: str = "flux-dev", config_name: str = "dev", quantize: int = 8, 
+                         lora_paths: Optional[List[str]] = None, lora_scales: Optional[List[float]] = None) -> FluxModel:
     """Initialize the Flux model"""
     try:
         logger.info(f"Loading Flux model from {model_path} with config {config_name} and quantization {quantize}...")
+        if lora_paths:
+            logger.info(f"Using LoRA adapters: {', '.join(lora_paths)}")
+            if lora_scales:
+                logger.info(f"LoRA scales: {', '.join(str(s) for s in lora_scales)}")
+        
         model = FluxModel(
             model_path=model_path,
             config_name=config_name,
-            quantize=quantize
+            quantize=quantize,
+            lora_paths=lora_paths,
+            lora_scales=lora_scales
         )
         logger.info("Flux model loaded successfully!")
         return model
@@ -96,8 +105,21 @@ async def lifespan(app: FastAPI):
     config_name = os.getenv("FLUX_CONFIG", "dev")
     quantize = int(os.getenv("FLUX_QUANTIZE", "8"))
     
+    # Parse LoRA parameters from environment variables
+    lora_paths = None
+    lora_scales = None
+    
+    lora_paths_env = os.getenv("FLUX_LORA_PATHS")
+    lora_scales_env = os.getenv("FLUX_LORA_SCALES")
+    
+    if lora_paths_env:
+        lora_paths = [path.strip() for path in lora_paths_env.split(',') if path.strip()]
+    
+    if lora_scales_env:
+        lora_scales = [float(scale.strip()) for scale in lora_scales_env.split(',') if scale.strip()]
+    
     try:
-        flux_model = initialize_flux_model(model_path, config_name, quantize)
+        flux_model = initialize_flux_model(model_path, config_name, quantize, lora_paths, lora_scales)
         logger.info("FastAPI startup completed successfully")
     except Exception as e:
         logger.error(f"Failed to initialize model during startup: {e}")
@@ -113,7 +135,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MLX-Flux Image Generation API",
     description="FastAPI server for Flux image generation using MLX",
-    version="1.0.0",
+    version=__version__,
     lifespan=lifespan
 )
 
@@ -129,9 +151,21 @@ app.add_middleware(
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
+    # Get current LoRA configuration
+    lora_info = {}
+    if flux_model:
+        try:
+            current_config = flux_model.get_current_config()
+            if 'lora_paths' in current_config:
+                lora_info['lora_paths'] = current_config['lora_paths']
+            if 'lora_scales' in current_config:
+                lora_info['lora_scales'] = current_config['lora_scales']
+        except:
+            pass
+    
     return {
         "message": "MLX-Flux Image Generation API", 
-        "version": "1.0.0",
+        "version": __version__,
         "docs_url": "/docs",
         "health_url": "/health",
         "endpoints": {
@@ -142,7 +176,8 @@ async def root():
         "model_loaded": flux_model is not None,
         "supported_sizes": [size.value for size in ImageSize],
         "response_formats": [format.value for format in ResponseFormat],
-        "supported_models": [model.value for model in ModelType]
+        "supported_models": [model.value for model in ModelType],
+        "lora_configuration": lora_info
     }
 
 @app.get("/health")
@@ -428,17 +463,30 @@ async def create_image_edit(
                 os.unlink(temp_image_path)
 
 def run_server(host: str = "0.0.0.0", port: int = 8000, model_path: str = "flux-dev", 
-               config_name: str = "dev", quantize: int = 8):
+               config_name: str = "dev", quantize: int = 8, lora_paths: Optional[List[str]] = None,
+               lora_scales: Optional[List[float]] = None):
     """Run the FastAPI server with specified configuration"""
     # Set environment variables for model configuration
     os.environ["FLUX_MODEL_PATH"] = model_path
     os.environ["FLUX_CONFIG"] = config_name
     os.environ["FLUX_QUANTIZE"] = str(quantize)
     
+    # Set LoRA environment variables
+    if lora_paths:
+        os.environ["FLUX_LORA_PATHS"] = ",".join(lora_paths)
+        if lora_scales:
+            os.environ["FLUX_LORA_SCALES"] = ",".join(str(s) for s in lora_scales)
+        else:
+            # Default to scale 1.0 for all LoRA adapters
+            os.environ["FLUX_LORA_SCALES"] = ",".join("1.0" for _ in lora_paths)
+    
     logger.info(f"Starting MLX-Flux API server on {host}:{port}")
     logger.info(f"Model path: {model_path}")
     logger.info(f"Config: {config_name}")
     logger.info(f"Quantize: {quantize}")
+    if lora_paths:
+        logger.info(f"LoRA paths: {', '.join(lora_paths)}")
+        logger.info(f"LoRA scales: {os.environ.get('FLUX_LORA_SCALES', 'default')}")
     
     uvicorn.run(app, host=host, port=port)
 

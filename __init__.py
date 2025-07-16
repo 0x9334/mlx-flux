@@ -2,7 +2,7 @@
 MLX-Flux: FastAPI server for Flux image generation using MLX
 """
 
-from _version import __version__
+from version import __version__
 
 from flux import (
     FluxModel, 

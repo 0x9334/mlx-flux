@@ -228,7 +228,7 @@ async def generate_image(request: ImageGenerationRequest):
             
             # Log generation request
             logger.info(f"Generating image with prompt: '{request.prompt[:50]}...' "
-                       f"(size: {width}x{height}, steps: {request.steps}, seed: {seed})")
+                       f"(size: {width}x{height}, steps: {request.steps}, seed: {seed}, image_strength: {request.image_strength})")
             
             # Generate the image using the FluxModel in a separate thread to avoid blocking
             start_time = time.time()
@@ -240,7 +240,8 @@ async def generate_image(request: ImageGenerationRequest):
                     seed=seed,
                     height=height,
                     width=width,
-                    num_inference_steps=request.steps
+                    num_inference_steps=request.steps,
+                    image_strength=request.image_strength
                 )
             )
             

@@ -3,7 +3,7 @@
 MLX-Flux Setup Script
 """
 
-from _version import __version__
+from version import __version__
 from setuptools import setup, find_packages
 import os
 

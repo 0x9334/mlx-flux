@@ -186,6 +186,7 @@ class BaseFluxModel(ABC):
         
         # Validate guidance
         guidance = kwargs.get('guidance', self.config.default_guidance)
+        image_strength = kwargs.get('image_strength', 1.0)
         if not isinstance(guidance, (int, float)) or guidance < 0:
             raise ModelGenerationError("Guidance must be a non-negative number.")
         
@@ -194,6 +195,7 @@ class BaseFluxModel(ABC):
             'guidance': guidance,
             'width': width,
             'height': height,
+            'image_strength': image_strength,
         }
         
         # Add image_path if provided (for inpainting/editing)

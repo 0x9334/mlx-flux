@@ -10,13 +10,14 @@ from typing import Optional, List
 import uvicorn
 import time
 import random
+from version import __version__
 
 from flux import FluxModel
 from app import run_server
 
 
 @click.group()
-@click.version_option(version="1.0.0", prog_name="mlx-flux")
+@click.version_option(version=__version__, prog_name="mlx-flux")
 def cli():
     """MLX-Flux: FastAPI server for Flux image generation using MLX"""
     pass

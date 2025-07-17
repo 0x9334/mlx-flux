@@ -10,10 +10,19 @@ import random
 import os
 import logging
 import asyncio
+import gc
 from typing import Optional, List
 from PIL import Image
 import tempfile
 from version import __version__
+
+# MLX memory management imports
+try:
+    import mlx.core as mx
+    MLX_AVAILABLE = True
+except ImportError:
+    MLX_AVAILABLE = False
+    mx = None
 
 from flux import FluxModel
 from schema import (
@@ -39,6 +48,63 @@ flux_model: Optional[FluxModel] = None
 
 # Semaphore to limit concurrent image generation requests
 semaphore: Optional[asyncio.Semaphore] = None
+
+def cleanup_inference_memory():
+    """Clean up memory after inference operations to prevent memory leaks"""
+    try:
+        if MLX_AVAILABLE and mx is not None:
+            # Clear MLX cache to free intermediate tensors
+            mx.clear_cache()
+            
+            # Log memory usage for debugging
+            if hasattr(mx, 'get_active_memory') and hasattr(mx, 'get_cache_memory'):
+                active_memory = mx.get_active_memory()
+                cache_memory = mx.get_cache_memory()
+                logger.info(f"Memory after cleanup - Active: {active_memory / 1024 / 1024:.2f} MB, Cache: {cache_memory / 1024 / 1024:.2f} MB")
+            
+            # Force synchronization to ensure cleanup is complete
+            mx.synchronize()
+            
+        # Python garbage collection
+        gc.collect()
+        
+    except Exception as e:
+        logger.warning(f"Memory cleanup failed: {e}")
+
+def log_memory_usage(stage: str = ""):
+    """Log current memory usage for debugging"""
+    try:
+        if MLX_AVAILABLE and mx is not None:
+            if hasattr(mx, 'get_active_memory') and hasattr(mx, 'get_cache_memory'):
+                active_memory = mx.get_active_memory()
+                cache_memory = mx.get_cache_memory()
+                peak_memory = mx.get_peak_memory() if hasattr(mx, 'get_peak_memory') else 0
+                logger.info(f"Memory usage {stage} - Active: {active_memory / 1024 / 1024:.2f} MB, "
+                           f"Cache: {cache_memory / 1024 / 1024:.2f} MB, "
+                           f"Peak: {peak_memory / 1024 / 1024:.2f} MB")
+    except Exception as e:
+        logger.warning(f"Memory logging failed: {e}")
+
+def force_memory_cleanup():
+    """Force aggressive memory cleanup during shutdown or critical memory situations"""
+    try:
+        if MLX_AVAILABLE and mx is not None:
+            # Clear cache multiple times to ensure cleanup
+            mx.clear_cache()
+            mx.synchronize()
+            
+            # Reset peak memory counter
+            if hasattr(mx, 'reset_peak_memory'):
+                mx.reset_peak_memory()
+            
+        # Multiple garbage collection passes
+        for _ in range(3):
+            gc.collect()
+            
+        logger.info("Forced memory cleanup completed")
+        
+    except Exception as e:
+        logger.warning(f"Forced memory cleanup failed: {e}")
 
 def parse_image_size(size: ImageSize) -> tuple[int, int]:
     """Parse ImageSize enum to width, height tuple"""
@@ -119,7 +185,14 @@ async def lifespan(app: FastAPI):
         lora_scales = [float(scale.strip()) for scale in lora_scales_env.split(',') if scale.strip()]
     
     try:
+        # Log memory usage before model loading
+        log_memory_usage("before model loading")
+        
         flux_model = initialize_flux_model(model_path, config_name, quantize, lora_paths, lora_scales)
+        
+        # Log memory usage after model loading
+        log_memory_usage("after model loading")
+        
         logger.info("FastAPI startup completed successfully")
     except Exception as e:
         logger.error(f"Failed to initialize model during startup: {e}")
@@ -129,6 +202,11 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
+    logger.info("Starting FastAPI shutdown cleanup...")
+    
+    # Force aggressive memory cleanup during shutdown
+    force_memory_cleanup()
+    
     logger.info("FastAPI shutdown completed")
 
 # Create FastAPI app with lifespan
@@ -163,6 +241,20 @@ async def root():
         except:
             pass
     
+    # Get memory usage information
+    memory_info = {}
+    if MLX_AVAILABLE and mx is not None:
+        try:
+            if hasattr(mx, 'get_active_memory') and hasattr(mx, 'get_cache_memory'):
+                memory_info = {
+                    "active_memory_mb": round(mx.get_active_memory() / 1024 / 1024, 2),
+                    "cache_memory_mb": round(mx.get_cache_memory() / 1024 / 1024, 2),
+                }
+                if hasattr(mx, 'get_peak_memory'):
+                    memory_info["peak_memory_mb"] = round(mx.get_peak_memory() / 1024 / 1024, 2)
+        except:
+            pass
+    
     return {
         "message": "MLX-Flux Image Generation API", 
         "version": __version__,
@@ -170,22 +262,82 @@ async def root():
         "health_url": "/health",
         "endpoints": {
             "image_generation": "/v1/images/generations",
-            "image_editing": "/v1/images/edits"
+            "image_editing": "/v1/images/edits",
+            "memory_cleanup": "/cleanup-memory"
         },
         "available_configs": FluxModel.get_available_configs(),
         "model_loaded": flux_model is not None,
         "supported_sizes": [size.value for size in ImageSize],
         "response_formats": [format.value for format in ResponseFormat],
         "supported_models": [model.value for model in ModelType],
-        "lora_configuration": lora_info
+        "lora_configuration": lora_info,
+        "memory_info": memory_info
     }
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint with memory information"""
+    memory_info = {}
+    if MLX_AVAILABLE and mx is not None:
+        try:
+            if hasattr(mx, 'get_active_memory') and hasattr(mx, 'get_cache_memory'):
+                memory_info = {
+                    "active_memory_mb": round(mx.get_active_memory() / 1024 / 1024, 2),
+                    "cache_memory_mb": round(mx.get_cache_memory() / 1024 / 1024, 2),
+                }
+                if hasattr(mx, 'get_peak_memory'):
+                    memory_info["peak_memory_mb"] = round(mx.get_peak_memory() / 1024 / 1024, 2)
+        except:
+            pass
+    
     return {
-        "status": "ok"
+        "status": "ok",
+        "model_loaded": flux_model is not None,
+        "mlx_available": MLX_AVAILABLE,
+        "memory_info": memory_info
     }
+
+@app.post("/cleanup-memory")
+async def cleanup_memory_endpoint():
+    """Manual memory cleanup endpoint for debugging"""
+    try:
+        # Log memory usage before cleanup
+        log_memory_usage("before manual cleanup")
+        
+        # Perform cleanup
+        cleanup_inference_memory()
+        
+        # Log memory usage after cleanup
+        log_memory_usage("after manual cleanup")
+        
+        # Get final memory info
+        memory_info = {}
+        if MLX_AVAILABLE and mx is not None:
+            try:
+                if hasattr(mx, 'get_active_memory') and hasattr(mx, 'get_cache_memory'):
+                    memory_info = {
+                        "active_memory_mb": round(mx.get_active_memory() / 1024 / 1024, 2),
+                        "cache_memory_mb": round(mx.get_cache_memory() / 1024 / 1024, 2),
+                    }
+                    if hasattr(mx, 'get_peak_memory'):
+                        memory_info["peak_memory_mb"] = round(mx.get_peak_memory() / 1024 / 1024, 2)
+            except:
+                pass
+        
+        return {
+            "status": "success",
+            "message": "Memory cleanup completed",
+            "memory_info": memory_info
+        }
+    except Exception as e:
+        logger.error(f"Manual memory cleanup failed: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "status": "error",
+                "message": f"Memory cleanup failed: {str(e)}"
+            }
+        )
 
 @app.post("/v1/images/generations", response_model=ImageGenerationResponse)
 async def generate_image(request: ImageGenerationRequest):
@@ -230,6 +382,9 @@ async def generate_image(request: ImageGenerationRequest):
             logger.info(f"Generating image with prompt: '{request.prompt[:50]}...' "
                        f"(size: {width}x{height}, steps: {request.steps}, seed: {seed}, image_strength: {request.image_strength})")
             
+            # Log memory usage before inference
+            log_memory_usage("before inference")
+            
             # Generate the image using the FluxModel in a separate thread to avoid blocking
             start_time = time.time()
             loop = asyncio.get_event_loop()
@@ -247,6 +402,12 @@ async def generate_image(request: ImageGenerationRequest):
             
             generation_time = time.time() - start_time
             logger.info(f"Image generated successfully in {generation_time:.2f} seconds")
+            
+            # Log memory usage after inference, before cleanup
+            log_memory_usage("after inference")
+            
+            # Clean up inference memory to prevent memory leaks
+            cleanup_inference_memory()
             
             # Create response data based on response format
             if request.response_format == ResponseFormat.B64_JSON:
@@ -268,6 +429,8 @@ async def generate_image(request: ImageGenerationRequest):
             
         except ValueError as e:
             logger.error(f"Validation error: {e}")
+            # Clean up memory even in error cases
+            cleanup_inference_memory()
             error_response = create_error_response(
                 ErrorCode.VALIDATION_ERROR,
                 str(e),
@@ -280,6 +443,8 @@ async def generate_image(request: ImageGenerationRequest):
             )
         except Exception as e:
             logger.error(f"Error generating image: {e}")
+            # Clean up memory even in error cases
+            cleanup_inference_memory()
             error_response = create_error_response(
                 ErrorCode.GENERATION_ERROR,
                 f"Failed to generate image: {str(e)}"
@@ -393,6 +558,9 @@ async def create_image_edit(
             logger.info(f"Editing image with prompt: '{prompt[:50]}...' "
                        f"(size: {width}x{height}, guidance: {guidance_scale}, seed: {seed})")
             
+            # Log memory usage before inference
+            log_memory_usage("before image editing")
+            
             # Generate the edited image using FluxModel
             start_time = time.time()
             loop = asyncio.get_event_loop()
@@ -414,6 +582,12 @@ async def create_image_edit(
             
             generation_time = time.time() - start_time
             logger.info(f"Image edited successfully in {generation_time:.2f} seconds")
+            
+            # Log memory usage after inference, before cleanup
+            log_memory_usage("after image editing")
+            
+            # Clean up inference memory to prevent memory leaks
+            cleanup_inference_memory()
             
             # Clean up temporary file
             os.unlink(temp_image_path)
@@ -437,6 +611,8 @@ async def create_image_edit(
             
         except ValueError as e:
             logger.error(f"Validation error: {e}")
+            # Clean up memory even in error cases
+            cleanup_inference_memory()
             error_response = create_error_response(
                 ErrorCode.VALIDATION_ERROR,
                 str(e),
@@ -449,6 +625,8 @@ async def create_image_edit(
             )
         except Exception as e:
             logger.error(f"Error editing image: {e}")
+            # Clean up memory even in error cases
+            cleanup_inference_memory()
             error_response = create_error_response(
                 ErrorCode.GENERATION_ERROR,
                 f"Failed to edit image: {str(e)}"

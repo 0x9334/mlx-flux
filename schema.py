@@ -69,7 +69,7 @@ class ImageGenerationRequest(BaseRequest):
     negative_prompt: Optional[str] = Field(None, description="The negative prompt to generate the image from")
     steps: Optional[int] = Field(default=20, ge=1, le=50, description="The number of inference steps (1-50)")
     seed: Optional[int] = Field(None, description="Seed for reproducible generation")
-    image_strength: Optional[float] = Field(default=0.8, ge=0.0, le=1.0, description="The strength of the image to generate")
+    image_strength: Optional[float] = Field(default=1.0, ge=0.0, le=1.0, description="The strength of the image to generate")
     
     @validator('prompt')
     def validate_prompt(cls, v):

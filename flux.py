@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Type, Any, Optional, Union, List
 from PIL import Image
-from mflux import Flux1, Config
+from mflux.flux.flux import Flux1, Config
 from mflux.config.model_config import ModelConfig
 from mflux.kontext.flux_kontext import Flux1Kontext
 import logging

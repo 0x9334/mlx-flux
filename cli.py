@@ -29,46 +29,48 @@ def cli():
 @click.option('--model-path', default='flux-dev', help='Path to the model')
 @click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux-schnell', 'flux-kontext']), help='Model configuration')
 @click.option('--quantize', default=8, type=click.Choice([4, 8, 16]), help='Quantization level')
-@click.option('--lora-paths', multiple=True, help='Paths to LoRA adapters (can be specified multiple times)')
-@click.option('--lora-scales', multiple=True, type=float, help='Scales for LoRA adapters (can be specified multiple times, should match number of paths)')
+@click.option('--lora-paths', default=None, help='Comma-separated paths to LoRA adapters (e.g. path1,path2,path3)')
+@click.option('--lora-scales', default=None, help='Comma-separated scales for LoRA adapters (e.g. 1.0,1.0,1.0)')
 @click.option('--reload', is_flag=True, help='Auto-reload on code changes (development)')
 def serve(host: str, port: int, model_path: str, config_name: str, quantize: int, 
-          lora_paths: tuple, lora_scales: tuple, reload: bool):
+          lora_paths: str, lora_scales: str, reload: bool):
     """Start the FastAPI server"""
-    
+    # Parse lora_paths
+    if lora_paths:
+        lora_paths_tuple = tuple(lora_paths.split(','))
+    else:
+        lora_paths_tuple = ()
+    # Parse lora_scales
+    if lora_scales:
+        lora_scales_tuple = tuple(float(s) for s in lora_scales.split(','))
+    else:
+        lora_scales_tuple = ()
     # Validate LoRA parameters
-    if lora_paths and lora_scales:
-        if len(lora_paths) != len(lora_scales):
+    if lora_paths_tuple and lora_scales_tuple:
+        if len(lora_paths_tuple) != len(lora_scales_tuple):
             click.echo("Error: Number of LoRA paths must match number of LoRA scales", err=True)
             sys.exit(1)
-    elif lora_paths and not lora_scales:
-        # Default to scale 1.0 for all LoRA adapters
-        lora_scales = tuple(1.0 for _ in lora_paths)
-    elif lora_scales and not lora_paths:
+    elif lora_paths_tuple and not lora_scales_tuple:
+        lora_scales_tuple = tuple(1.0 for _ in lora_paths_tuple)
+    elif lora_scales_tuple and not lora_paths_tuple:
         click.echo("Error: LoRA scales provided but no LoRA paths specified", err=True)
         sys.exit(1)
-    
     if reload:
-        # For development mode with auto-reload
         os.environ["FLUX_MODEL_PATH"] = model_path
         os.environ["FLUX_CONFIG"] = config_name
         os.environ["FLUX_QUANTIZE"] = str(quantize)
-        
-        # Set LoRA environment variables
-        if lora_paths:
-            os.environ["FLUX_LORA_PATHS"] = ",".join(lora_paths)
-            os.environ["FLUX_LORA_SCALES"] = ",".join(str(s) for s in lora_scales)
-        
+        if lora_paths_tuple:
+            os.environ["FLUX_LORA_PATHS"] = ",".join(lora_paths_tuple)
+            os.environ["FLUX_LORA_SCALES"] = ",".join(str(s) for s in lora_scales_tuple)
         click.echo(f"Starting MLX-Flux API server in development mode...")
         click.echo(f"Host: {host}")
         click.echo(f"Port: {port}")
         click.echo(f"Model Path: {model_path}")
         click.echo(f"Config: {config_name}")
         click.echo(f"Quantize: {quantize}")
-        if lora_paths:
-            click.echo(f"LoRA Paths: {', '.join(lora_paths)}")
-            click.echo(f"LoRA Scales: {', '.join(str(s) for s in lora_scales)}")
-        
+        if lora_paths_tuple:
+            click.echo(f"LoRA Paths: {', '.join(lora_paths_tuple)}")
+            click.echo(f"LoRA Scales: {', '.join(str(s) for s in lora_scales_tuple)}")
         uvicorn.run(
             "app:app",
             host=host,
@@ -84,8 +86,8 @@ def serve(host: str, port: int, model_path: str, config_name: str, quantize: int
             model_path=model_path, 
             config_name=config_name, 
             quantize=quantize,
-            lora_paths=list(lora_paths) if lora_paths else None,
-            lora_scales=list(lora_scales) if lora_scales else None
+            lora_paths=list(lora_paths_tuple) if lora_paths_tuple else None,
+            lora_scales=list(lora_scales_tuple) if lora_scales_tuple else None
         )
 
 
@@ -98,29 +100,35 @@ def serve(host: str, port: int, model_path: str, config_name: str, quantize: int
 @click.option('--height', default=1024, type=int, help='Image height')
 @click.option('--seed', type=int, help='Random seed for reproducibility')
 @click.option('--quantize', default=8, type=click.Choice([4, 8, 16]), help='Quantization level')
-@click.option('--lora-paths', multiple=True, help='Paths to LoRA adapters (can be specified multiple times)')
-@click.option('--lora-scales', multiple=True, type=float, help='Scales for LoRA adapters (can be specified multiple times, should match number of paths)')
+@click.option('--lora-paths', default=None, help='Comma-separated paths to LoRA adapters (e.g. path1,path2,path3)')
+@click.option('--lora-scales', default=None, help='Comma-separated scales for LoRA adapters (e.g. 1.0,1.0,1.0)')
 @click.option('--output', default='generated_image.png', help='Output filename')
 def generate(prompt: str, model_path: str, config_name: str, steps: int, width: int, height: int, 
-             seed: Optional[int], quantize: int, lora_paths: tuple, lora_scales: tuple, output: str):
+             seed: Optional[int], quantize: int, lora_paths: str, lora_scales: str, output: str):
     """Generate an image directly using the CLI"""
     try:
-        # Generate seed if not provided
         if seed is None:
             seed = random.randint(0, 2**32 - 1)
-        
+        # Parse lora_paths
+        if lora_paths:
+            lora_paths_tuple = tuple(lora_paths.split(','))
+        else:
+            lora_paths_tuple = ()
+        # Parse lora_scales
+        if lora_scales:
+            lora_scales_tuple = tuple(float(s) for s in lora_scales.split(','))
+        else:
+            lora_scales_tuple = ()
         # Validate LoRA parameters
-        if lora_paths and lora_scales:
-            if len(lora_paths) != len(lora_scales):
+        if lora_paths_tuple and lora_scales_tuple:
+            if len(lora_paths_tuple) != len(lora_scales_tuple):
                 click.echo("Error: Number of LoRA paths must match number of LoRA scales", err=True)
                 sys.exit(1)
-        elif lora_paths and not lora_scales:
-            # Default to scale 1.0 for all LoRA adapters
-            lora_scales = tuple(1.0 for _ in lora_paths)
-        elif lora_scales and not lora_paths:
+        elif lora_paths_tuple and not lora_scales_tuple:
+            lora_scales_tuple = tuple(1.0 for _ in lora_paths_tuple)
+        elif lora_scales_tuple and not lora_paths_tuple:
             click.echo("Error: LoRA scales provided but no LoRA paths specified", err=True)
             sys.exit(1)
-        
         click.echo(f"Generating image with the following parameters:")
         click.echo(f"  Prompt: {prompt}")
         click.echo(f"  Model Path: {model_path}")
@@ -129,21 +137,17 @@ def generate(prompt: str, model_path: str, config_name: str, steps: int, width: 
         click.echo(f"  Size: {width}x{height}")
         click.echo(f"  Seed: {seed}")
         click.echo(f"  Quantize: {quantize}")
-        if lora_paths:
-            click.echo(f"  LoRA Paths: {', '.join(lora_paths)}")
-            click.echo(f"  LoRA Scales: {', '.join(str(s) for s in lora_scales)}")
-        
-        # Load the model
+        if lora_paths_tuple:
+            click.echo(f"  LoRA Paths: {', '.join(lora_paths_tuple)}")
+            click.echo(f"  LoRA Scales: {', '.join(str(s) for s in lora_scales_tuple)}")
         click.echo("Loading Flux model...")
         flux_model = FluxModel(
             model_path=model_path,
             config_name=config_name,
             quantize=quantize,
-            lora_paths=list(lora_paths) if lora_paths else None,
-            lora_scales=list(lora_scales) if lora_scales else None
+            lora_paths=list(lora_paths_tuple) if lora_paths_tuple else None,
+            lora_scales=list(lora_scales_tuple) if lora_scales_tuple else None
         )
-        
-        # Generate the image
         click.echo("Generating image...")
         image = flux_model(
             prompt=prompt,
@@ -152,11 +156,8 @@ def generate(prompt: str, model_path: str, config_name: str, steps: int, width: 
             width=width,
             num_inference_steps=steps
         )
-        
-        # Save the image
         image.save(output)
         click.echo(f"Image saved as: {output}")
-        
     except Exception as e:
         click.echo(f"Error generating image: {e}", err=True)
         sys.exit(1)
@@ -166,49 +167,50 @@ def generate(prompt: str, model_path: str, config_name: str, steps: int, width: 
 @click.option('--model-path', default='flux-dev', help='Path to the model')
 @click.option('--config-name', default='flux-dev', type=click.Choice(['flux-dev', 'flux-schnell', 'flux-kontext']), help='Model configuration to test')
 @click.option('--quantize', default=8, type=click.Choice([4, 8, 16]), help='Quantization level')
-@click.option('--lora-paths', multiple=True, help='Paths to LoRA adapters (can be specified multiple times)')
-@click.option('--lora-scales', multiple=True, type=float, help='Scales for LoRA adapters (can be specified multiple times, should match number of paths)')
-def test_model(model_path: str, config_name: str, quantize: int, lora_paths: tuple, lora_scales: tuple):
+@click.option('--lora-paths', default=None, help='Comma-separated paths to LoRA adapters (e.g. path1,path2,path3)')
+@click.option('--lora-scales', default=None, help='Comma-separated scales for LoRA adapters (e.g. 1.0,1.0,1.0)')
+def test_model(model_path: str, config_name: str, quantize: int, lora_paths: str, lora_scales: str):
     """Test model loading and basic functionality"""
     try:
+        # Parse lora_paths
+        if lora_paths:
+            lora_paths_tuple = tuple(lora_paths.split(','))
+        else:
+            lora_paths_tuple = ()
+        # Parse lora_scales
+        if lora_scales:
+            lora_scales_tuple = tuple(float(s) for s in lora_scales.split(','))
+        else:
+            lora_scales_tuple = ()
         # Validate LoRA parameters
-        if lora_paths and lora_scales:
-            if len(lora_paths) != len(lora_scales):
+        if lora_paths_tuple and lora_scales_tuple:
+            if len(lora_paths_tuple) != len(lora_scales_tuple):
                 click.echo("Error: Number of LoRA paths must match number of LoRA scales", err=True)
                 sys.exit(1)
-        elif lora_paths and not lora_scales:
-            # Default to scale 1.0 for all LoRA adapters
-            lora_scales = tuple(1.0 for _ in lora_paths)
-        elif lora_scales and not lora_paths:
+        elif lora_paths_tuple and not lora_scales_tuple:
+            lora_scales_tuple = tuple(1.0 for _ in lora_paths_tuple)
+        elif lora_scales_tuple and not lora_paths_tuple:
             click.echo("Error: LoRA scales provided but no LoRA paths specified", err=True)
             sys.exit(1)
-        
         click.echo(f"Testing model loading with config: {config_name}")
         click.echo(f"Model Path: {model_path}")
         click.echo(f"Quantization level: {quantize}")
-        if lora_paths:
-            click.echo(f"LoRA Paths: {', '.join(lora_paths)}")
-            click.echo(f"LoRA Scales: {', '.join(str(s) for s in lora_scales)}")
-        
-        # Test model loading
+        if lora_paths_tuple:
+            click.echo(f"LoRA Paths: {', '.join(lora_paths_tuple)}")
+            click.echo(f"LoRA Scales: {', '.join(str(s) for s in lora_scales_tuple)}")
         click.echo("Loading model...")
         start_time = time.time()
-        
         flux_model = FluxModel(
             model_path=model_path,
             config_name=config_name,
             quantize=quantize,
-            lora_paths=list(lora_paths) if lora_paths else None,
-            lora_scales=list(lora_scales) if lora_scales else None
+            lora_paths=list(lora_paths_tuple) if lora_paths_tuple else None,
+            lora_scales=list(lora_scales_tuple) if lora_scales_tuple else None
         )
-        
         load_time = time.time() - start_time
         click.echo(f"Model loaded successfully in {load_time:.2f} seconds")
-        
-        # Test basic generation
         click.echo("Testing image generation...")
         start_time = time.time()
-        
         test_image = flux_model(
             prompt="A simple test image",
             seed=42,
@@ -216,17 +218,12 @@ def test_model(model_path: str, config_name: str, quantize: int, lora_paths: tup
             width=512,
             num_inference_steps=4  # Use fewer steps for quick test
         )
-        
         generation_time = time.time() - start_time
         click.echo(f"Test image generated successfully in {generation_time:.2f} seconds")
-        
-        # Save test image
         test_output = f"test_output_{config_name}_{quantize}.png"
         test_image.save(test_output)
         click.echo(f"Test image saved as: {test_output}")
-        
         click.echo("✅ Model test completed successfully!")
-        
     except Exception as e:
         click.echo(f"❌ Model test failed: {e}", err=True)
         sys.exit(1)

@@ -1,7 +1,7 @@
 fastapi==0.115.14
 uvicorn[standard]==0.35.0
 pydantic==2.11.7
-mflux==0.9.6
+mflux==0.9.3
 Pillow==10.4.0
 requests==2.32.4
 click==8.2.1

@@ -20,7 +20,21 @@ def read_requirements():
     requirements_path = os.path.join(os.path.dirname(__file__), 'requirements.txt')
     if os.path.exists(requirements_path):
         with open(requirements_path, 'r', encoding='utf-8') as f:
-            return [line.strip() for line in f if line.strip() and not line.startswith('#')]
+            requirements = []
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    # Handle conditional requirements (environment markers)
+                    if ';' in line:
+                        # Split on semicolon to separate package spec from environment marker
+                        package_spec, env_marker = line.split(';', 1)
+                        package_spec = package_spec.strip()
+                        env_marker = env_marker.strip()
+                        # Add the conditional requirement
+                        requirements.append(f"{package_spec}; {env_marker}")
+                    else:
+                        requirements.append(line)
+            return requirements
     return []
 
 setup(

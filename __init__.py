@@ -22,6 +22,7 @@ from schema import (
     ImageData,
     ImageSize
 )
+from app import run_server
 
 __all__ = [
     "__version__",
@@ -39,4 +40,5 @@ __all__ = [
     "ImageGenerationErrorResponse",
     "ImageData",
     "ImageSize",
+    "run_server",
 ] 
